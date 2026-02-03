@@ -1,47 +1,60 @@
 import whisper
-from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip
+from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip, ColorClip
 from arabic_reshaper import reshape
 from bidi.algorithm import get_display
 
-# 1. إعداد النموذج (التعرف التلقائي على اللغة)
+# 1. تحميل النموذج مع تفعيل Word-level Timestamps
 model = whisper.load_model("base")
-print("جاري تحليل الفيديو واستخراج النصوص...")
+print("جاري تحليل الكلمات بدقة عالية...")
 result = model.transcribe("video.mp4", word_timestamps=True)
 
 video = VideoFileClip("video.mp4")
-clips = []
+final_clips = [video]
 
 def fix_text(text):
-    # إصلاح النصوص العربية (التشكيل والاتجاه) وترك الإنجليزية كما هي
-    reshaped = reshape(text)
-    return get_display(reshaped)
+    # معالجة النصوص العربية
+    return get_display(reshape(text))
 
-# 2. إعدادات التصميم
-FONT_SIZE = 26 # حجم الخط صغير كما طلبت
-BOTTOM_MARGIN = 0.88 # لإنزال النص للأسفل (88% من ارتفاع الشاشة)
+# --- إعدادات التصميم الاحترافي ---
+FONT_SIZE = 34
+TEXT_COLOR = 'black'        # النص أسود ليبرز فوق الأصفر
+HIGHLIGHT_COLOR = 'yellow'  # المربع الأصفر
+Y_POS = video.h * 0.70      # رفع النص (70% من الارتفاع) ليكون بعيداً عن الحافة
 
+# 2. توليد المربعات والنصوص لكل كلمة
 for segment in result['segments']:
-    start_t = segment['start']
-    duration = segment['end'] - segment['start']
-    text_content = segment['text'].strip()
+    if 'words' in segment:
+        for word in segment['words']:
+            text_str = word['word'].strip()
+            start_t = word['start']
+            end_t = word['end']
+            duration = end_t - start_t
+            
+            if duration <= 0: continue
 
-    # إنشاء قصاصة النص
-    txt_clip = TextClip(
-        fix_text(text_content), 
-        fontsize=FONT_SIZE, 
-        color='white', 
-        font='Arial', # الخط الافتراضي في سيرفرات Ubuntu
-        method='caption',
-        size=(video.w * 0.8, None) # النص لا يتجاوز 80% من عرض الشاشة
-    )
-    
-    # تحديد الوقت والموقع (في المنتصف وبالأسفل)
-    txt_clip = txt_clip.set_start(start_t).set_duration(duration).set_pos(('center', video.h * BOTTOM_MARGIN))
-    
-    clips.append(txt_clip)
+            # إنشاء نص الكلمة
+            txt = TextClip(
+                fix_text(text_str),
+                fontsize=FONT_SIZE,
+                color=TEXT_COLOR,
+                font='Arial-Bold',
+                method='label'
+            ).set_start(start_t).set_duration(duration)
 
-# 3. دمج النصوص مع الفيديو الأصلي وتصديره
-print("جاري دمج النصوص وإنتاج الفيديو النهائي...")
-final_video = CompositeVideoClip([video] + clips)
+            # إنشاء الخلفية الصفراء (Highlight) بحجم الكلمة
+            bg = ColorClip(
+                size=(txt.w + 15, txt.h + 10),
+                color=(255, 255, 0) # أصفر فاقع
+            ).set_opacity(0.9).set_start(start_t).set_duration(duration)
+
+            # وضع الكلمة والمربع في المنتصف تماماً
+            bg = bg.set_pos(('center', Y_POS))
+            txt = txt.set_pos(('center', Y_POS + 5)) # إزاحة بسيطة لتوسيط النص داخل المربع
+
+            final_clips.append(bg)
+            final_clips.append(txt)
+
+# 3. دمج الطبقات وتصدير الفيديو
+print("جاري دمج الكلمات المتحركة...")
+final_video = CompositeVideoClip(final_clips)
 final_video.write_videofile("output.mp4", codec="libx264", audio_codec="aac", fps=video.fps)
-print("تمت العملية بنجاح!")
