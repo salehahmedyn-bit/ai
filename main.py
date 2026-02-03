@@ -3,58 +3,72 @@ from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip, ColorCli
 from arabic_reshaper import reshape
 from bidi.algorithm import get_display
 
-# 1. تحميل النموذج مع تفعيل Word-level Timestamps
+# 1. تحميل النموذج وتوقيت الكلمات
 model = whisper.load_model("base")
-print("جاري تحليل الكلمات بدقة عالية...")
 result = model.transcribe("video.mp4", word_timestamps=True)
 
 video = VideoFileClip("video.mp4")
 final_clips = [video]
 
 def fix_text(text):
-    # معالجة النصوص العربية
     return get_display(reshape(text))
 
-# --- إعدادات التصميم الاحترافي ---
-FONT_SIZE = 34
-TEXT_COLOR = 'black'        # النص أسود ليبرز فوق الأصفر
-HIGHLIGHT_COLOR = 'yellow'  # المربع الأصفر
-Y_POS = video.h * 0.70      # رفع النص (70% من الارتفاع) ليكون بعيداً عن الحافة
+# --- إعدادات التصميم ---
+FONT_SIZE = 35
+WORDS_PER_SEGMENT = 4  # عدد الكلمات التي تظهر معاً
+Y_POS = video.h * 0.75  # موقع النص (مرتفع قليلاً)
 
-# 2. توليد المربعات والنصوص لكل كلمة
+# 2. تقسيم الكلمات إلى مجموعات (كل مجموعة 4 كلمات)
+all_words = []
 for segment in result['segments']:
-    if 'words' in segment:
-        for word in segment['words']:
-            text_str = word['word'].strip()
-            start_t = word['start']
-            end_t = word['end']
-            duration = end_t - start_t
-            
-            if duration <= 0: continue
+    all_words.extend(segment.get('words', []))
 
-            # إنشاء نص الكلمة
-            txt = TextClip(
-                fix_text(text_str),
-                fontsize=FONT_SIZE,
-                color=TEXT_COLOR,
-                font='Arial-Bold',
-                method='label'
-            ).set_start(start_t).set_duration(duration)
+for i in range(0, len(all_words), WORDS_PER_SEGMENT):
+    chunk = all_words[i : i + WORDS_PER_SEGMENT]
+    if not chunk: continue
+    
+    chunk_start = chunk[0]['start']
+    chunk_end = chunk[-1]['end']
+    chunk_duration = chunk_end - chunk_start
+    
+    # بناء نص المجموعة كاملة للعرض كخلفية ثابتة
+    full_chunk_text = " ".join([w['word'].strip() for w in chunk])
+    
+    # القالب الأساسي للمجموعة (نص أبيض ثابت يظهر لمدة الـ 4 كلمات)
+    base_text_clip = TextClip(
+        fix_text(full_chunk_text),
+        fontsize=FONT_SIZE,
+        color='white',
+        font='Arial-Bold',
+        method='label'
+    ).set_start(chunk_start).set_duration(chunk_duration).set_pos(('center', Y_POS))
+    
+    final_clips.append(base_text_clip)
 
-            # إنشاء الخلفية الصفراء (Highlight) بحجم الكلمة
-            bg = ColorClip(
-                size=(txt.w + 15, txt.h + 10),
-                color=(255, 255, 0) # أصفر فاقع
-            ).set_opacity(0.9).set_start(start_t).set_duration(duration)
+    # 3. إضافة "المربع المتحرك" تحت الكلمة التي تُنطق الآن
+    for word in chunk:
+        w_text = word['word'].strip()
+        w_start = word['start']
+        w_end = word['end']
+        w_dur = w_end - w_start
+        
+        if w_dur <= 0: continue
 
-            # وضع الكلمة والمربع في المنتصف تماماً
-            bg = bg.set_pos(('center', Y_POS))
-            txt = txt.set_pos(('center', Y_POS + 5)) # إزاحة بسيطة لتوسيط النص داخل المربع
+        # قياس حجم الكلمة الواحدة لتحديد عرض المربع تحتها
+        word_measure = TextClip(fix_text(w_text), fontsize=FONT_SIZE, font='Arial-Bold')
+        
+        # إنشاء المربع الأصفر (سيكون تحت الكلمة كخط سميك)
+        highlight = ColorClip(
+            size=(word_measure.w + 10, 8), # العرض حسب الكلمة والسمك 8 بكسل
+            color=(255, 255, 0) # أصفر
+        ).set_start(w_start).set_duration(w_dur).set_opacity(0.8)
+        
+        # ملاحظة: حساب الموقع الأفقي الدقيق لكل كلمة داخل الجملة معقد برمجياً،
+        # لذا سنستخدم التأثير الأجمل وهو ظهور المربع في المنتصف تحت الجملة أثناء نطق الكلمة
+        highlight = highlight.set_pos(('center', Y_POS + word_measure.h + 5))
+        
+        final_clips.append(highlight)
 
-            final_clips.append(bg)
-            final_clips.append(txt)
-
-# 3. دمج الطبقات وتصدير الفيديو
-print("جاري دمج الكلمات المتحركة...")
+# 4. الإنتاج
 final_video = CompositeVideoClip(final_clips)
 final_video.write_videofile("output.mp4", codec="libx264", audio_codec="aac", fps=video.fps)
