@@ -2,4 +2,3 @@ openai-whisper
 moviepy==1.0.3
 arabic-reshaper
 python-bidi
-googletrans==4.0.0-rc1
