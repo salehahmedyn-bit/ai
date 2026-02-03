@@ -19,11 +19,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg imagemagick
+          # تفعيل صلاحيات ImageMagick لكتابة النصوص
           sudo sed -i 's/domain="path" rights="none" pattern="@\*"/domain="path" rights="read|write" pattern="@\*"/g' /etc/ImageMagick-6/policy.xml
 
       - name: Install Dependencies
         run: |
-          pip install openai-whisper moviepy==1.0.3 arabic-reshaper python-bidi googletrans==4.0.0-rc1
+          pip install openai-whisper moviepy==1.0.3 arabic-reshaper python-bidi
 
       - name: Run Animation Script
         run: python main.py
