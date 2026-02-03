@@ -2,51 +2,46 @@ import whisper
 from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip
 from arabic_reshaper import reshape
 from bidi.algorithm import get_display
-from googletrans import Translator
 
-# إعداد المترجم والنموذج
-translator = Translator()
+# 1. إعداد النموذج (التعرف التلقائي على اللغة)
 model = whisper.load_model("base")
-
-# 1. تحليل الفيديو (إنجليزي)
+print("جاري تحليل الفيديو واستخراج النصوص...")
 result = model.transcribe("video.mp4", word_timestamps=True)
+
 video = VideoFileClip("video.mp4")
 clips = []
 
-def fix_arabic(text):
-    # معالجة النصوص العربية لتظهر بشكل صحيح
+def fix_text(text):
+    # إصلاح النصوص العربية (التشكيل والاتجاه) وترك الإنجليزية كما هي
     reshaped = reshape(text)
     return get_display(reshaped)
 
-# 2. إعدادات التصميم (تصغير الخط والموقع)
-FONT_SIZE_EN = 24
-FONT_SIZE_AR = 22
+# 2. إعدادات التصميم
+FONT_SIZE = 26 # حجم الخط صغير كما طلبت
+BOTTOM_MARGIN = 0.88 # لإنزال النص للأسفل (88% من ارتفاع الشاشة)
 
 for segment in result['segments']:
     start_t = segment['start']
-    end_t = segment['end']
-    duration = end_t - start_t
-    original_text = segment['text'].strip()
+    duration = segment['end'] - segment['start']
+    text_content = segment['text'].strip()
 
-    # ترجمة النص للعربية
-    try:
-        translated = translator.translate(original_text, src='en', dest='ar').text
-    except:
-        translated = original_text # في حال فشل الاتصال
+    # إنشاء قصاصة النص
+    txt_clip = TextClip(
+        fix_text(text_content), 
+        fontsize=FONT_SIZE, 
+        color='white', 
+        font='Arial', # الخط الافتراضي في سيرفرات Ubuntu
+        method='caption',
+        size=(video.w * 0.8, None) # النص لا يتجاوز 80% من عرض الشاشة
+    )
+    
+    # تحديد الوقت والموقع (في المنتصف وبالأسفل)
+    txt_clip = txt_clip.set_start(start_t).set_duration(duration).set_pos(('center', video.h * BOTTOM_MARGIN))
+    
+    clips.append(txt_clip)
 
-    # --- النص الإنجليزي (أصغر ومرفوع قليلاً عن العربي) ---
-    txt_en = TextClip(original_text, fontsize=FONT_SIZE_EN, color='white', 
-                     font='Arial-Bold', method='caption', size=(video.w*0.8, None))
-    txt_en = txt_en.set_start(start_t).set_duration(duration).set_pos(('center', video.h*0.80))
-
-    # --- النص العربي (أصغر وفي الأسفل تماماً) ---
-    txt_ar = TextClip(fix_arabic(translated), fontsize=FONT_SIZE_AR, color='yellow', 
-                     font='Arial', method='caption', size=(video.w*0.8, None))
-    txt_ar = txt_ar.set_start(start_t).set_duration(duration).set_pos(('center', video.h*0.88))
-
-    clips.append(txt_en)
-    clips.append(txt_ar)
-
-# 3. الإنتاج
-final = CompositeVideoClip([video] + clips)
-final.write_videofile("output.mp4", codec="libx264", audio_codec="aac", fps=video.fps)
+# 3. دمج النصوص مع الفيديو الأصلي وتصديره
+print("جاري دمج النصوص وإنتاج الفيديو النهائي...")
+final_video = CompositeVideoClip([video] + clips)
+final_video.write_videofile("output.mp4", codec="libx264", audio_codec="aac", fps=video.fps)
+print("تمت العملية بنجاح!")
