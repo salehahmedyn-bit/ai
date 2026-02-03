@@ -2,7 +2,7 @@ name: Video Auto Subtitles
 on:
   push:
     paths:
-      - 'video.mp4'  # سيبدأ العمل فور رفع ملف بهذا الاسم
+      - 'video.mp4'
 
 jobs:
   build:
@@ -19,18 +19,17 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg imagemagick
-          # هذه الخطوة ضرورية لـ MoviePy لكي يسمح باستخدام النصوص
           sudo sed -i 's/domain="path" rights="none" pattern="@\*"/domain="path" rights="read|write" pattern="@\*"/g' /etc/ImageMagick-6/policy.xml
 
       - name: Install Dependencies
         run: |
-          pip install openai-whisper moviepy==1.0.3 arabic-reshaper python-bidi
+          pip install openai-whisper moviepy==1.0.3 arabic-reshaper python-bidi googletrans==4.0.0-rc1
 
       - name: Run Animation Script
         run: python main.py
 
       - name: Upload Finished Video
-        uses: actions/upload-artifact@v4 # تحديث للإصدار الأخير
+        uses: actions/upload-artifact@v4
         with:
           name: subtitle-video
           path: output.mp4
